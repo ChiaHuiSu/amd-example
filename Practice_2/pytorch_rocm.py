@@ -1,37 +1,33 @@
 import torch
 from torchvision import models, transforms
+from torchvision.models import MobileNet_V2_Weights
 from PIL import Image
 
-# ✅ Check if ROCm device is available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# ✅ Load pre-trained MobileNetV2
-model = models.mobilenet_v2(pretrained=True)
-model.eval()
-model.to(device)
+# ✅ 指定權重（含類別名稱）
+weights = MobileNet_V2_Weights.IMAGENET1K_V1
+model = models.mobilenet_v2(weights=weights).to(device).eval()
+categories = weights.meta["categories"]   # 長度 1000 的類別名稱列表
 
-# ✅ Prepare input image
-img_path = "../../Untitled.jpeg"  # Replace with your actual image
-img = Image.open(img_path)
+# ✅ 前處理（用同套權重的 transforms 保險）
+preprocess = weights.transforms()
 
-# ✅ Image pre-processing
-preprocess = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],  # Imagenet mean
-        std=[0.229, 0.224, 0.225]    # Imagenet std
-    )
-])
+# [TODO] Change your image
+img = Image.open("/path/to/your/image")
+input_tensor = preprocess(img).unsqueeze(0).to(device)
 
-input_tensor = preprocess(img).unsqueeze(0).to(device)  # Add batch dim and move to GPU
-
-# ✅ Run inference
 with torch.no_grad():
-    output = model(input_tensor)
+    output = model(input_tensor)          # logits
+    probs = output.softmax(1)
 
-# ✅ Get top-1 prediction
-predicted_class = torch.argmax(output[0])
-print(f"Predicted class index: {predicted_class.item()}")
+# ✅ Top-1
+top1_id = int(probs.argmax(1))
+print(f"Top-1 id: {top1_id}, label: {categories[top1_id]}, prob: {probs[0, top1_id].item():.4f}")
+
+# ✅ Top-5（可選）
+top5_prob, top5_id = probs.topk(5)
+for i in range(5):
+    idx = int(top5_id[0, i])
+    print(f"#{i+1}: id={idx}, {categories[idx]} ({top5_prob[0, i].item():.4f})")
